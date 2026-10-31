@@ -1,0 +1,6 @@
+"""Shared numerical and process tolerances."""
+
+CLEARANCE_MARGIN_METERS = 0.01
+FLOAT_ABS_TOL = 1e-9
+FLOAT_KINEMATIC_TOL = 1e-6
+SUBPROCESS_TIMEOUT_SECONDS = 10
