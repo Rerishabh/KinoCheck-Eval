@@ -61,5 +61,23 @@
     "goal": [4.5, 4.5],
     "feasible": true,
     "description": "The wide room permits a collision-free route around the obstacle island."
+  },
+  {
+    "id": "s7_perimeter_graze",
+    "grid": [
+      [0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 1, 0, 1, 0, 0, 0],
+      [0, 0, 0, 0, 1, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0],
+      [0, 0, 0, 0, 0, 0, 0, 0]
+    ],
+    "cell_size": 1.0,
+    "radius": 0.51,
+    "start": [1.5, 2.5],
+    "goal": [6.5, 2.5],
+    "feasible": true
   }
 ]

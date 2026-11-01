@@ -53,7 +53,7 @@ def test_reference_module_candidate_passes_all_scenarios():
         for scenario in SCENARIOS
     ]
 
-    assert [report.status for report in reports] == ["PASS"] * 6
+    assert [report.status for report in reports] == ["PASS"] * len(SCENARIOS)
 
 
 def test_direct_callable_candidate_is_spawned_and_evaluated():
@@ -143,7 +143,7 @@ def test_benchmark_report_is_json_serializable_and_has_schema():
     candidate_report = decoded["candidate_reports"][0]
     assert decoded["schema_version"] == "1.0"
     assert decoded["task_id"] == "KC-02"
-    assert candidate_report["passed"] == 6
+    assert candidate_report["passed"] == len(SCENARIOS)
     assert candidate_report["failed"] == 0
     assert candidate_report["overall_verdict"] == "PASS"
 

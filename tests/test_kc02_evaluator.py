@@ -1,4 +1,17 @@
+import json
+from pathlib import Path
+
+from kinocheck.grader import evaluate_scenario
+from tasks.kc02 import reference
+from tasks.kc02.mutants import plan_m3_out_of_bounds
 from scripts.evaluate_kc02_mutants import evaluate
+
+
+SCENARIOS = json.loads(
+    (
+        Path(__file__).parent.parent / "tasks" / "kc02" / "scenarios.json"
+    ).read_text(encoding="utf-8")
+)
 
 
 def make_scenario(
@@ -126,3 +139,20 @@ def test_single_waypoint_fails_format_validation():
     verdict, _result = evaluate(lambda _scenario: [(0.5, 0.5)], scenario)
 
     assert verdict == "INVALID_OUTPUT"
+
+
+def test_s7_reference_plan_passes():
+    scenario = next(item for item in SCENARIOS if item["id"] == "s7_perimeter_graze")
+
+    verdict = evaluate_scenario(reference.plan(scenario), scenario)
+
+    assert verdict.status == "PASS"
+
+
+def test_s7_m3_plan_fails_out_of_bounds():
+    scenario = next(item for item in SCENARIOS if item["id"] == "s7_perimeter_graze")
+
+    verdict = evaluate_scenario(plan_m3_out_of_bounds(scenario), scenario)
+
+    assert verdict.status == "FAIL"
+    assert verdict.failure_category == "OUT_OF_BOUNDS"
