@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import copy
 import importlib
+import importlib.util
 import json
 import math
 import multiprocessing
+from pathlib import Path
 import pickle
 import queue as queue_module
 import time
@@ -33,16 +35,24 @@ class CandidateSpec:
     module_path: str | None = None
     entrypoint: str = "plan"
     func: Callable[[dict], object] | None = None
+    file_path: str | None = None
 
     def __post_init__(self) -> None:
         module_candidate = self.module_path is not None
+        file_candidate = self.file_path is not None
         callable_candidate = self.func is not None
-        if module_candidate == callable_candidate:
+        if sum((module_candidate, file_candidate, callable_candidate)) != 1:
             raise ValueError(
-                "CandidateSpec requires exactly one of module_path or func."
+                "CandidateSpec requires exactly one of module_path, file_path, or func."
             )
-        if module_candidate and not self.entrypoint:
+        if (module_candidate or file_candidate) and not self.entrypoint:
             raise ValueError("A module candidate requires a non-empty entrypoint.")
+        if file_candidate:
+            object.__setattr__(
+                self,
+                "file_path",
+                str(Path(self.file_path).expanduser().resolve()),
+            )
 
 
 @dataclass(frozen=True)
@@ -79,6 +89,7 @@ class BenchmarkReport:
 
 def _worker_run(
     module_path: str,
+    file_path: str | None,
     entrypoint: str,
     scenario: dict,
     result_queue: Queue,
@@ -86,7 +97,15 @@ def _worker_run(
     """Load and execute a module candidate inside a spawned worker."""
     started = time.perf_counter()
     try:
-        module = importlib.import_module(module_path)
+        if file_path is not None:
+            module_name = f"kinocheck_submission_{abs(hash(file_path))}"
+            spec = importlib.util.spec_from_file_location(module_name, file_path)
+            if spec is None or spec.loader is None:
+                raise ImportError(f"Unable to load submission file: {file_path}")
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+        else:
+            module = importlib.import_module(module_path)
         candidate = getattr(module, entrypoint)
         if not callable(candidate):
             raise TypeError(f"{entrypoint!r} is not callable")
@@ -213,10 +232,19 @@ def run_candidate_scenario(
     started = time.perf_counter()
     context = multiprocessing.get_context("spawn")
     result_queue = context.Queue(maxsize=1)
-    target = _worker_run if candidate.module_path is not None else _worker_run_callable
+    module_candidate = (
+        candidate.module_path is not None or candidate.file_path is not None
+    )
+    target = _worker_run if module_candidate else _worker_run_callable
     args = (
-        (candidate.module_path, candidate.entrypoint, scenario, result_queue)
-        if candidate.module_path is not None
+        (
+            candidate.module_path,
+            candidate.file_path,
+            candidate.entrypoint,
+            scenario,
+            result_queue,
+        )
+        if module_candidate
         else (candidate.func, scenario, result_queue)
     )
     process = context.Process(target=target, args=args)
