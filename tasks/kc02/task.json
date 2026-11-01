@@ -1,0 +1,15 @@
+{
+  "task_id": "KC-02",
+  "title": "Grid planner without corner-cutting",
+  "timeout_seconds": 10,
+  "entrypoint": "plan",
+  "categories": [
+    "COLLISION_CORNER",
+    "COLLISION_SWEPT",
+    "OUT_OF_BOUNDS",
+    "FALSE_INFEASIBLE",
+    "FALSE_FEASIBLE",
+    "ENDPOINT_ERROR",
+    "INVALID_OUTPUT"
+  ]
+}

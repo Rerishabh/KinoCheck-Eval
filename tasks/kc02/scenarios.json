@@ -1,0 +1,65 @@
+[
+  {
+    "id": "s1_diagonal_touch_pinch",
+    "grid": [[0, 1], [1, 0]],
+    "cell_size": 1.0,
+    "radius": 0.45,
+    "start": [0.5, 0.5],
+    "goal": [1.5, 1.5],
+    "feasible": false,
+    "expected": null,
+    "description": "Diagonal touches the shared corner at (1.0, 1.0) with distance 0.0 < 0.46m; the outer border cannot be crossed."
+  },
+  {
+    "id": "s2_passable_corridor",
+    "grid": [[0, 1, 0], [0, 0, 0], [0, 1, 0]],
+    "cell_size": 1.0,
+    "radius": 0.45,
+    "start": [1.5, 0.5],
+    "goal": [1.5, 2.5],
+    "feasible": true,
+    "description": "Straight corridor through column i=1 has clearance 0.50m >= 0.46m."
+  },
+  {
+    "id": "s3_single_corner_grazing",
+    "grid": [[0, 0, 0], [0, 1, 0], [0, 0, 0]],
+    "cell_size": 1.0,
+    "radius": 0.45,
+    "start": [0.5, 0.5],
+    "goal": [2.5, 2.5],
+    "feasible": true,
+    "description": "A detour around the obstacle at cell (1, 1) is required."
+  },
+  {
+    "id": "s4_chokepoint_too_narrow",
+    "grid": [[0, 1, 0], [0, 0, 0], [0, 1, 0]],
+    "cell_size": 0.8,
+    "radius": 0.45,
+    "start": [1.2, 0.4],
+    "goal": [1.2, 2.0],
+    "feasible": false,
+    "expected": null,
+    "description": "The corridor width is 0.8m, less than the required diameter of 0.92m."
+  },
+  {
+    "id": "s5_sealed_goal",
+    "grid": [[0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 1, 1], [0, 0, 1, 0]],
+    "cell_size": 1.0,
+    "radius": 0.45,
+    "start": [0.5, 0.5],
+    "goal": [3.5, 3.5],
+    "feasible": false,
+    "expected": null,
+    "description": "The free goal cell (3, 3) is walled off by cells (2, 2), (2, 3), and (3, 2)."
+  },
+  {
+    "id": "s6_wide_room_with_island",
+    "grid": [[0, 0, 0, 0, 0], [0, 0, 0, 0, 0], [0, 0, 1, 0, 0], [0, 0, 0, 0, 0], [0, 0, 0, 0, 0]],
+    "cell_size": 1.0,
+    "radius": 0.35,
+    "start": [0.5, 0.5],
+    "goal": [4.5, 4.5],
+    "feasible": true,
+    "description": "The wide room permits a collision-free route around the obstacle island."
+  }
+]
