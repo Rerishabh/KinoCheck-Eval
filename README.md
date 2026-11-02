@@ -11,15 +11,13 @@
 
 KinoCheck-Eval is a deterministic, execution-based benchmark evaluating whether code-generating AI models produce physically safe and kinematically valid wheeled-robot motion planning and speed-profiling code. While existing code benchmarks evaluate static functional correctness or repository-level issue resolution, many general-purpose code benchmarks do not directly measure continuous physical constraints such as swept-volume obstacle clearance, continuous perimeter margins, Pareto-optimal hazard budgets, and coupled forward-backward braking profiles. Evaluated across 20 calibrated scenarios spanning 3 core tasks (KC-02, KC-03, KC-04) using GitHub Copilot (Auto / Standard tier), the model achieved an overall scenario-trial pass rate of 70.6% (24 passed out of 34 evaluated scenario trials across 5 total task attempts). The benchmark exposed acute domain-specific failure modes: a catastrophic runtime name-binding scope error during geometric segment-rectangle distance evaluation, and premature false-infeasibility rejections caused by conflating continuous world coordinates with discrete grid cell indices.
 
-## 2. Video Walkthrough Link
+## 2. Video Walkthrough
 
-- **Walkthrough Video:** `https://youtu.be/kX4rVOpBWcE` (Publicly viewable on YouTube / Loom; runtime <= 5:00, no login or permission request required).
-- **Suggested Video Agenda:**
-  - 0:00–0:40: Safety gaps in LLM-generated robotics motion planning code.
-  - 0:40–1:30: Benchmark architecture: KC-02 (swept clearance), KC-03 (risk Pareto), KC-04 (speed profiling).
-  - 1:30–2:30: Deterministic grader engine and mutant kill verification (221 passing unit tests, zero LLM judges).
-  - 2:30–3:45: Empirical model evaluation: Walkthrough of Copilot Attempt 1 failures (KC-02 NameError and KC-03 continuous coordinate rejection).
-  - 3:45–5:00: Attempt 2 resolution, reproduction CLI commands, and limitations.
+[![KinoCheck-Eval Video Walkthrough](https://img.youtube.com/vi/kX4rVOpBWcE/maxresdefault.jpg)](https://www.youtube.com/watch?v=kX4rVOpBWcE)
+
+**▶ [Watch the KinoCheck-Eval walkthrough on YouTube](https://www.youtube.com/watch?v=kX4rVOpBWcE)**
+
+This walkthrough demonstrates the benchmark tasks, deterministic grading, KC-02 and KC-03 failure analysis, and reproduction of the successful candidate results.
 
 ## 3. Domain and Expertise
 
@@ -35,8 +33,8 @@ KinoCheck-Eval draws directly on practical domain experience in mobile robotics 
 - **Signature:** `plan(problem: dict) -> list[tuple[float, float]] | None`
 - **Input Fields:** `grid`, `cell_size`, `radius`, `start`, `goal`.
 - **Mathematical Acceptance Criteria:**
-  - Continuous swept-segment clearance: Every point along every straight-line segment must maintain a distance of at least `radius + 0.01 m` from all occupied obstacle cells (`grid[x][y] == 1`), explicitly including obstacle corners.
-  - Arena perimeter clearance: Every segment must remain at least `radius + 0.01 m` inside the arena boundaries `[0, width] x [0, height]`.
+  - Continuous swept-segment clearance: Every point along every straight-line segment must maintain a distance of at least $r_{\text{robot}} + 0.01\,\text{m}$ from all occupied obstacle cells (`grid[x][y] == 1`), explicitly including obstacle corners.
+  - Arena perimeter clearance: Every segment must remain at least $r_{\text{robot}} + 0.01\,\text{m}$ inside the arena boundaries `[0, width] x [0, height]`.
   - Endpoint matching tolerance: `1e-9`.
   - Infeasibility Contract: Returns `None` for scenarios constructed to be provably infeasible.
 - **Scenarios:** 7 total (4 feasible, 3 provably infeasible chokepoints/pinch points).
@@ -48,9 +46,11 @@ KinoCheck-Eval draws directly on practical domain experience in mobile robotics 
 - **Signature:** `plan(problem: dict) -> list[list[float]] | list[tuple[float, float]] | None`
 - **Input Fields:** `grid`, `risk_grid` (column-major), `cell_size`, `radius`, `start`, `goal`, `feasible`, `risk_budget`, `optimal_length`.
 - **Mathematical Acceptance Criteria:**
-  - Clearance constraints: `radius + 0.01 m` from obstacles and arena perimeters.
-  - Cumulative line-integral risk: Segment risk is computed by splitting each line segment at all crossed grid-cell boundaries. Total risk must satisfy: `Risk(path) <= risk_budget + 1e-9`.
-  - Objective: Return the path minimizing Euclidean length while strictly respecting the risk budget.
+  - Clearance constraints: $r_{\text{robot}} + 0.01\,\text{m}$ from obstacles and arena perimeters.
+  - Cumulative line-integral risk: Segment risk is computed by splitting each line segment at all crossed grid-cell boundaries. Total risk must satisfy: $R(P) \leq R_{\text{budget}} + 10^{-9}$.
+  - Objective: Return the path solving:
+
+    $$\min_{P} L(P) \quad \text{subject to} \quad R(P) \leq R_{\text{budget}}$$
   - Endpoint matching tolerance: `1e-9`.
 - **Scenarios:** 7 total (5 feasible detours/corridors, 2 provably infeasible budget/geometry traps).
 - **Why It Matters:** Weighted-sum scalarization can miss solutions on non-convex regions of the Pareto frontier, so it may not recover every risk-budget-optimal path.
@@ -61,10 +61,22 @@ KinoCheck-Eval draws directly on practical domain experience in mobile robotics 
 - **Signature:** `plan(problem: dict) -> list[tuple[float, float, float, float]] | None`
 - **Input Fields:** `path`, `v_max`, `a_accel_max`, `a_brake_max`, `a_lat_max`, `v_start`, `v_goal`, `feasible`, `optimal_time`.
 - **Mathematical Acceptance Criteria:**
-  - Discrete 3-point Menger curvature: kappa_i = 4 * Area(A, B, C) / (d(A, B) * d(B, C) * d(A, C)) for interior non-collinear points (0.0 at endpoints and collinear segments).
-  - Lateral acceleration limit: v_i <= min(v_max, sqrt(a_lat_max / kappa_i)) when kappa_i > 1e-6.
-  - Longitudinal acceleration bounds: -a_brake_max - 1e-3 <= (v_{i+1}^2 - v_i^2) / (2 * ds_i) <= a_accel_max + 1e-3.
-  - Timestamp integration: t_0 = 0.0; dt_i = 2 * ds_i / (v_i + v_{i+1}) (strictly increasing by >= 1e-4).
+  - Discrete 3-point Menger curvature:
+
+    $$\kappa_i = \frac{4 \cdot \text{Area}(A, B, C)}{d(A, B) \cdot d(B, C) \cdot d(A, C)}$$
+
+    for interior non-collinear points (0.0 at endpoints and collinear segments).
+  - Lateral acceleration limit:
+
+    $$v_i \leq \min\left(v_{\max}, \sqrt{\frac{a_{\text{lat,max}}}{\kappa_i}}\right) \quad (\text{for } \kappa_i > 10^{-6})$$
+  - Longitudinal acceleration bounds:
+
+    $$-a_{\text{brake,max}} - 10^{-3} \leq \frac{v_{i+1}^2 - v_i^2}{2\,\Delta s_i} \leq a_{\text{accel,max}} + 10^{-3}$$
+  - Timestamp integration:
+
+    $$t_0 = 0,\qquad \Delta t_i = \frac{2\,\Delta s_i}{v_i + v_{i+1}}$$
+
+    (strictly increasing by $\geq 10^{-4}$).
   - Endpoint velocity tolerances: 1e-4.
 - **Scenarios:** 6 total (4 feasible profiles, 2 kinematically impossible braking/curvature traps).
 - **Why It Matters:** Failing to execute a backward braking pass results in vehicles entering sharp curves at unsafe speeds, causing loss of traction or lateral slip.
@@ -76,7 +88,7 @@ KinoCheck-Eval draws directly on practical domain experience in mobile robotics 
 Runs in standard Python without requiring ROS, Gazebo, or external simulators.
 
 ```bash
-git clone <repo_url> kinocheck-eval
+git clone https://github.com/Rerishabh/KinoCheck-Eval.git kinocheck-eval
 cd kinocheck-eval
 python -m venv .venv
 
@@ -97,9 +109,18 @@ Pinned dependencies include `pytest==9.2.0`, `numpy==2.5.4`, `shapely==2.2.0`, `
 The CLI module is `kinocheck.cli`. It supports the `benchmark` subcommand:
 
 ```bash
-python -m kinocheck.cli benchmark --task KC-02 --submission results.copilot_auto.kc02_attempt2 --timeout 10
-python -m kinocheck.cli benchmark --task KC-03 --submission results.copilot_auto.kc03_attempt2 --timeout 10
-python -m kinocheck.cli benchmark --task KC-04 --submission results.copilot_auto.kc04_attempt1 --timeout 10
+python -m kinocheck.cli benchmark \
+  --task KC-02 \
+  --submission results.copilot_auto.kc02_attempt2 \
+  --timeout 10
+python -m kinocheck.cli benchmark \
+  --task KC-03 \
+  --submission results.copilot_auto.kc03_attempt2 \
+  --timeout 10
+python -m kinocheck.cli benchmark \
+  --task KC-04 \
+  --submission results.copilot_auto.kc04_attempt1 \
+  --timeout 10
 ```
 
 Supported arguments are:
@@ -113,7 +134,10 @@ Supported arguments are:
 Run all tasks in one invocation:
 
 ```bash
-python -m kinocheck.cli benchmark --task all --submission results.copilot_auto.kc02_attempt2 --timeout 10
+python -m kinocheck.cli benchmark \
+  --task all \
+  --submission results.copilot_auto.kc02_attempt2 \
+  --timeout 10
 ```
 
 ### Mutant Calibration
@@ -132,9 +156,14 @@ python scripts/evaluate_kc03_mutants.py
 python scripts/evaluate_kc04_mutants.py
 ```
 
-### KC-02 Mutants
+### Mutant Calibration Summary
 
-All 5 mutants were detected at least once; individual mutants were detected in 1–6 scenarios (100% mutant kill rate).
+| Task | Targeted Defect Models | Mutants Detected | Mutant-Level Kill Rate |
+|---|---:|---:|---:|
+| KC-02 | 5 | 5 | 100% |
+| KC-03 | 5 | 5 | 100% |
+| KC-04 | 5 | 5 | 100% |
+| **Total** | **15** | **15** | **100%** |
 
 ## 6. Empirical Evaluation Results
 
@@ -196,4 +225,4 @@ GitHub Copilot (Auto / Standard tier) was used as the code-generating AI system 
 - [x] 221 passing automated tests.
 - [x] Mutant calibration scripts and documented kill results.
 - [x] Candidate artifacts and benchmark reproduction commands.
-- [ ] Public walkthrough video linked at `https://youtu.be/kX4rVOpBWcE`.
+- [x] Public walkthrough video linked with the clickable YouTube thumbnail.
