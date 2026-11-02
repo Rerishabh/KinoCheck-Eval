@@ -1,0 +1,14 @@
+{
+  "task_id": "KC-03",
+  "name": "Risk-Budget Pareto Path Planning",
+  "entrypoint": "plan",
+  "timeout": 10.0,
+  "failure_categories": [
+    "INVALID_OUTPUT",
+    "FALSE_INFEASIBLE",
+    "FALSE_FEASIBLE",
+    "OUT_OF_BOUNDS",
+    "COLLISION_SWEPT",
+    "BUDGET_EXCEEDED"
+  ]
+}

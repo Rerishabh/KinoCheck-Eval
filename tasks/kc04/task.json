@@ -1,0 +1,15 @@
+{
+  "task_id": "KC-04",
+  "name": "Curvature-Aware Speed Profiling",
+  "entrypoint": "plan",
+  "timeout": 10.0,
+  "failure_categories": [
+    "INVALID_OUTPUT",
+    "FALSE_INFEASIBLE",
+    "FALSE_FEASIBLE",
+    "ENDPOINT_SPEED_ERROR",
+    "SPEED_LIMIT_EXCEEDED",
+    "LATERAL_ACCEL_EXCEEDED",
+    "LONGITUDINAL_ACCEL_EXCEEDED"
+  ]
+}

@@ -9,15 +9,15 @@ import json
 import math
 import multiprocessing
 from pathlib import Path
-import pickle
-import queue as queue_module
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
-from multiprocessing.queues import Queue
+from multiprocessing.connection import Connection
 from numbers import Real
 from typing import Any, Callable, Literal
 
 from .grader import evaluate_scenario
+from .tolerances import SUBPROCESS_TIMEOUT_SECONDS
 
 
 ExecutionStatus = Literal[
@@ -72,6 +72,8 @@ class ScenarioReport:
     reason: str | None = None
     result: object = None
     execution_status: ExecutionStatus = "COMPLETED"
+    metrics: dict[str, float] | None = None
+    warnings: list[str] | None = None
 
 
 @dataclass(frozen=True)
@@ -92,92 +94,100 @@ def _worker_run(
     file_path: str | None,
     entrypoint: str,
     scenario: dict,
-    result_queue: Queue,
+    result_connection: Connection,
 ) -> None:
     """Load and execute a module candidate inside a spawned worker."""
     started = time.perf_counter()
     try:
-        if file_path is not None:
-            module_name = f"kinocheck_submission_{abs(hash(file_path))}"
-            spec = importlib.util.spec_from_file_location(module_name, file_path)
-            if spec is None or spec.loader is None:
-                raise ImportError(f"Unable to load submission file: {file_path}")
-            module = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(module)
-        else:
-            module = importlib.import_module(module_path)
-        candidate = getattr(module, entrypoint)
-        if not callable(candidate):
-            raise TypeError(f"{entrypoint!r} is not callable")
-    except Exception as error:
+        try:
+            if file_path is not None:
+                module_name = f"kinocheck_submission_{abs(hash(file_path))}"
+                spec = importlib.util.spec_from_file_location(module_name, file_path)
+                if spec is None or spec.loader is None:
+                    raise ImportError(f"Unable to load submission file: {file_path}")
+                module = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(module)
+            else:
+                module = importlib.import_module(module_path)
+            candidate = getattr(module, entrypoint)
+            if not callable(candidate):
+                raise TypeError(f"{entrypoint!r} is not callable")
+        except Exception as error:
+            _put_message(
+                result_connection,
+                {
+                    "execution_status": "LOAD_ERROR",
+                    "error": f"{type(error).__name__}: {error}",
+                    "execution_time_ms": _elapsed_ms(started),
+                },
+            )
+            return
+
+        try:
+            result = candidate(copy.deepcopy(scenario))
+        except Exception as error:
+            _put_message(
+                result_connection,
+                {
+                    "execution_status": "RUNTIME_ERROR",
+                    "error": f"{type(error).__name__}: {error}",
+                    "execution_time_ms": _elapsed_ms(started),
+                },
+            )
+            return
+
         _put_message(
-            result_queue,
+            result_connection,
             {
-                "execution_status": "LOAD_ERROR",
-                "error": f"{type(error).__name__}: {error}",
+                "execution_status": "COMPLETED",
+                "result": result,
                 "execution_time_ms": _elapsed_ms(started),
             },
         )
-        return
-
-    try:
-        result = candidate(copy.deepcopy(scenario))
-    except Exception as error:
-        _put_message(
-            result_queue,
-            {
-                "execution_status": "RUNTIME_ERROR",
-                "error": f"{type(error).__name__}: {error}",
-                "execution_time_ms": _elapsed_ms(started),
-            },
-        )
-        return
-
-    _put_message(
-        result_queue,
-        {
-            "execution_status": "COMPLETED",
-            "result": result,
-            "execution_time_ms": _elapsed_ms(started),
-        },
-    )
+    finally:
+        result_connection.close()
 
 
 def _worker_run_callable(
     func: Callable[[dict], object],
     scenario: dict,
-    result_queue: Queue,
+    result_connection: Connection,
 ) -> None:
     """Execute a picklable test callable inside a spawned worker."""
     started = time.perf_counter()
     try:
-        result = func(copy.deepcopy(scenario))
-    except Exception as error:
+        try:
+            result = func(copy.deepcopy(scenario))
+        except Exception as error:
+            _put_message(
+                result_connection,
+                {
+                    "execution_status": "RUNTIME_ERROR",
+                    "error": f"{type(error).__name__}: {error}",
+                    "execution_time_ms": _elapsed_ms(started),
+                },
+            )
+            return
+
         _put_message(
-            result_queue,
+            result_connection,
             {
-                "execution_status": "RUNTIME_ERROR",
-                "error": f"{type(error).__name__}: {error}",
+                "execution_status": "COMPLETED",
+                "result": result,
                 "execution_time_ms": _elapsed_ms(started),
             },
         )
-        return
-
-    _put_message(
-        result_queue,
-        {
-            "execution_status": "COMPLETED",
-            "result": result,
-            "execution_time_ms": _elapsed_ms(started),
-        },
-    )
+    finally:
+        result_connection.close()
 
 
-def _put_message(result_queue: Queue, message: dict[str, object]) -> None:
+def _put_message(
+    result_connection: Connection, message: dict[str, object]
+) -> None:
     try:
-        payload = pickle.dumps(message)
+        result_connection.send(message)
     except Exception as error:
-        payload = pickle.dumps(
+        result_connection.send(
             {
                 "execution_status": "RUNTIME_ERROR",
                 "error": (
@@ -187,7 +197,6 @@ def _put_message(result_queue: Queue, message: dict[str, object]) -> None:
                 "execution_time_ms": message.get("execution_time_ms", 0.0),
             }
         )
-    result_queue.put(payload)
 
 
 def _elapsed_ms(started: float) -> float:
@@ -195,11 +204,12 @@ def _elapsed_ms(started: float) -> float:
 
 
 def _execution_from_message(
-    payload: bytes,
+    message: object,
     elapsed_ms: float,
 ) -> ExecutionResult:
     try:
-        message = pickle.loads(payload)
+        if not isinstance(message, dict):
+            raise TypeError("Worker response must be a dictionary")
         status = message["execution_status"]
         if status not in {
             "COMPLETED",
@@ -231,7 +241,7 @@ def run_candidate_scenario(
 
     started = time.perf_counter()
     context = multiprocessing.get_context("spawn")
-    result_queue = context.Queue(maxsize=1)
+    parent_connection, child_connection = context.Pipe(duplex=False)
     module_candidate = (
         candidate.module_path is not None or candidate.file_path is not None
     )
@@ -242,10 +252,10 @@ def run_candidate_scenario(
             candidate.file_path,
             candidate.entrypoint,
             scenario,
-            result_queue,
+            child_connection,
         )
         if module_candidate
-        else (candidate.func, scenario, result_queue)
+        else (candidate.func, scenario, child_connection)
     )
     process = context.Process(target=target, args=args)
     execution: ExecutionResult | None = None
@@ -253,6 +263,7 @@ def run_candidate_scenario(
     try:
         try:
             process.start()
+            child_connection.close()
         except Exception as error:
             execution = ExecutionResult(
                 execution_status="CRASH",
@@ -260,33 +271,42 @@ def run_candidate_scenario(
                 execution_time_ms=_elapsed_ms(started),
             )
         else:
-            process.join(timeout_seconds)
-            if process.is_alive():
-                process.terminate()
-                process.join()
-                execution = ExecutionResult(
-                    execution_status="TIMEOUT",
-                    error=f"Exceeded {timeout_seconds}s timeout.",
-                    execution_time_ms=_elapsed_ms(started),
-                )
-            else:
+            if parent_connection.poll(timeout_seconds):
                 try:
-                    payload = result_queue.get(timeout=0.2)
-                except queue_module.Empty:
+                    message = parent_connection.recv()
+                except (EOFError, OSError) as error:
                     execution = ExecutionResult(
-                        execution_status=(
-                            "CRASH" if process.exitcode else "RUNTIME_ERROR"
-                        ),
+                        execution_status="CRASH",
                         error=(
-                            f"Worker exited with code {process.exitcode}."
-                            if process.exitcode
-                            else "Worker produced no result."
+                            "Worker result pipe closed: "
+                            f"{type(error).__name__}: {error}; "
+                            f"exit code {process.exitcode}"
                         ),
                         execution_time_ms=_elapsed_ms(started),
                     )
                 else:
+                    process.join(timeout=1.0)
+                    if process.is_alive():
+                        process.terminate()
+                        process.join()
                     execution = _execution_from_message(
-                        payload, _elapsed_ms(started)
+                        message, _elapsed_ms(started)
+                    )
+            else:
+                process.join(0)
+                if process.is_alive():
+                    process.terminate()
+                    process.join()
+                    execution = ExecutionResult(
+                        execution_status="TIMEOUT",
+                        error=f"Exceeded {timeout_seconds}s timeout.",
+                        execution_time_ms=_elapsed_ms(started),
+                    )
+                else:
+                    execution = ExecutionResult(
+                        execution_status="CRASH",
+                        error=f"Worker exited with code {process.exitcode}.",
+                        execution_time_ms=_elapsed_ms(started),
                     )
 
         if execution is None:
@@ -314,6 +334,8 @@ def run_candidate_scenario(
             reason=verdict.reason,
             result=verdict.result,
             execution_status="COMPLETED",
+            metrics=verdict.metrics,
+            warnings=verdict.warnings,
         )
     finally:
         try:
@@ -329,17 +351,12 @@ def run_candidate_scenario(
             process.join()
         except Exception:
             pass
-        if execution is not None and execution.execution_status != "COMPLETED":
-            try:
-                result_queue.cancel_join_thread()
-            except Exception:
-                pass
         try:
-            result_queue.close()
+            child_connection.close()
         except Exception:
             pass
         try:
-            result_queue.join_thread()
+            parent_connection.close()
         except Exception:
             pass
 
@@ -394,6 +411,16 @@ def _report_dict(report: BenchmarkReport) -> dict[str, object]:
                 "reason": scenario.reason,
                 "result": _json_safe(scenario.result),
                 "execution_status": scenario.execution_status,
+                "metrics": (
+                    _json_safe(scenario.metrics)
+                    if scenario.metrics is not None
+                    else None
+                ),
+                "warnings": (
+                    _json_safe(scenario.warnings)
+                    if scenario.warnings is not None
+                    else None
+                ),
             }
             for scenario in report.scenarios
         ],
@@ -408,9 +435,16 @@ def _report_dict(report: BenchmarkReport) -> dict[str, object]:
 
 def run_benchmark(
     candidates: list[CandidateSpec],
-    scenarios: list[dict],
-    timeout_seconds: float,
+    scenarios: Sequence[dict],
+    timeout_seconds: float = SUBPROCESS_TIMEOUT_SECONDS,
+    *,
+    task_id: str | None = None,
 ) -> dict[str, object]:
+    effective_task_id = task_id
+    if effective_task_id is None:
+        effective_task_id = (
+            scenarios[0].get("task_id", "KC-02") if scenarios else "KC-02"
+        )
     reports: list[dict[str, object]] = []
     for candidate in candidates:
         started = time.perf_counter()
@@ -434,11 +468,12 @@ def run_benchmark(
                         else 0.0
                     ),
                     overall_verdict="PASS" if failed == 0 else "FAIL",
+                    task_id=effective_task_id,
                 )
             )
         )
     return {
         "schema_version": "1.0",
-        "task_id": "KC-02",
+        "task_id": effective_task_id,
         "candidate_reports": reports,
     }

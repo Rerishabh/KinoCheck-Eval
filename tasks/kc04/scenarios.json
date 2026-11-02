@@ -1,0 +1,80 @@
+[
+  {
+    "task_id": "KC-04",
+    "id": "s1_straight_cruise",
+    "path": [[0.0, 0.0], [2.0, 0.0], [5.0, 0.0], [8.0, 0.0], [10.0, 0.0]],
+    "v_max": 4.0,
+    "a_accel_max": 2.0,
+    "a_brake_max": 2.0,
+    "a_lat_max": 5.0,
+    "v_start": 0.0,
+    "v_goal": 0.0,
+    "feasible": true,
+    "optimal_time": 4.585786437626905
+  },
+  {
+    "task_id": "KC-04",
+    "id": "s2_sharp_hairpin",
+    "path": [[0.0, 0.0], [2.0, 0.0], [4.0, 0.0], [4.0, 2.0], [4.0, 4.0]],
+    "v_max": 4.0,
+    "a_accel_max": 2.0,
+    "a_brake_max": 2.0,
+    "a_lat_max": 1.0,
+    "v_start": 1.0,
+    "v_goal": 1.0,
+    "feasible": true,
+    "optimal_time": 3.9096692477556827
+  },
+  {
+    "task_id": "KC-04",
+    "id": "s3_terminal_braking_trap",
+    "path": [[0.0, 0.0], [2.0, 0.0], [5.0, 0.0], [6.0, 0.0]],
+    "v_max": 4.0,
+    "a_accel_max": 4.0,
+    "a_brake_max": 1.0,
+    "a_lat_max": 5.0,
+    "v_start": 3.0,
+    "v_goal": 0.0,
+    "feasible": true,
+    "optimal_time": 3.5147186257614296
+  },
+  {
+    "task_id": "KC-04",
+    "id": "s4_high_speed_chicane",
+    "path": [[0.0, 0.0], [1.0, 0.0], [2.0, 1.0], [3.0, 1.0], [4.0, 0.0], [5.0, 0.0]],
+    "v_max": 3.0,
+    "a_accel_max": 2.0,
+    "a_brake_max": 2.0,
+    "a_lat_max": 2.0,
+    "v_start": 1.0,
+    "v_goal": 1.0,
+    "feasible": true,
+    "optimal_time": 3.5926227835129088
+  },
+  {
+    "task_id": "KC-04",
+    "id": "s5_kinematically_infeasible_braking",
+    "path": [[0.0, 0.0], [0.1, 0.0]],
+    "v_max": 4.0,
+    "a_accel_max": 2.0,
+    "a_brake_max": 0.1,
+    "a_lat_max": 5.0,
+    "v_start": 4.0,
+    "v_goal": 0.0,
+    "feasible": false,
+    "optimal_time": 0.0
+  },
+  {
+    "task_id": "KC-04",
+    "id": "s6_infeasible_boundary_curvature",
+    "path": [[0.0, 0.0], [0.0, 1.0], [1.0, 1.0]],
+    "v_max": 3.0,
+    "a_accel_max": 2.0,
+    "a_brake_max": 2.0,
+    "a_lat_max": 0.5,
+    "v_start": 3.0,
+    "v_goal": 1.0,
+    "feasible": false,
+    "optimal_time": 0.0
+  }
+]

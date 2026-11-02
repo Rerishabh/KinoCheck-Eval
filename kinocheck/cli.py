@@ -11,10 +11,19 @@ from .runner import CandidateSpec, run_benchmark
 
 
 ROOT = Path(__file__).resolve().parents[1]
+TASKS_DIR = ROOT / "tasks"
 TASKS = {
     "KC-02": (
-        ROOT / "tasks" / "kc02" / "task.json",
-        ROOT / "tasks" / "kc02" / "scenarios.json",
+        TASKS_DIR / "kc02" / "task.json",
+        TASKS_DIR / "kc02" / "scenarios.json",
+    ),
+    "KC-03": (
+        TASKS_DIR / "kc03" / "task.json",
+        TASKS_DIR / "kc03" / "scenarios.json",
+    ),
+    "KC-04": (
+        TASKS_DIR / "kc04" / "task.json",
+        TASKS_DIR / "kc04" / "scenarios.json",
     )
 }
 
@@ -23,7 +32,14 @@ def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m kinocheck.cli")
     commands = parser.add_subparsers(dest="command", required=True)
     benchmark = commands.add_parser("benchmark")
-    benchmark.add_argument("--task", required=True)
+    benchmark.add_argument(
+        "--task",
+        required=True,
+        help=(
+            "Task ID (KC-02, KC-03, KC-04), comma-separated task IDs, "
+            "or 'all'."
+        ),
+    )
     benchmark.add_argument("--submission", required=True)
     benchmark.add_argument("--entrypoint", default="plan")
     benchmark.add_argument("--timeout", type=float, default=5.0)
@@ -48,6 +64,19 @@ def _load_task(task_id: str) -> tuple[dict, list[dict]]:
     if task.get("task_id") != task_id:
         raise ValueError(f"Malformed task data for {task_id}.")
     return task, scenarios
+
+
+def _resolve_tasks(task_arg: str) -> list[str]:
+    if task_arg.lower() == "all":
+        return list(TASKS)
+
+    task_ids = [task_id.strip() for task_id in task_arg.split(",")]
+    if not task_ids or any(not task_id for task_id in task_ids):
+        raise ValueError(f"Unknown task: {task_arg}")
+    for task_id in task_ids:
+        if task_id not in TASKS:
+            raise ValueError(f"Unknown task: {task_id}")
+    return task_ids
 
 
 def _candidate(submission: str, entrypoint: str) -> CandidateSpec:
@@ -88,6 +117,14 @@ def _print_report(report: dict[str, object]) -> None:
         )
 
 
+def _print_multi_report(reports: list[dict[str, object]]) -> None:
+    for index, report in enumerate(reports):
+        if index:
+            print()
+        print(f"=== Task {report['task_id']} ===")
+        _print_report(report)
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.command != "benchmark":
@@ -95,20 +132,55 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.timeout <= 0:
             raise ValueError("timeout must be positive")
-        task, scenarios = _load_task(args.task)
+        task_ids = _resolve_tasks(args.task)
         candidate = _candidate(args.submission, args.entrypoint)
-        report = run_benchmark([candidate], scenarios, args.timeout)
-        if args.json_out is not None:
-            args.json_out.write_text(
-                json.dumps(report, indent=2),
-                encoding="utf-8",
+        reports = []
+        for task_id in task_ids:
+            task, scenarios = _load_task(task_id)
+            reports.append(
+                run_benchmark(
+                    [candidate],
+                    scenarios,
+                    args.timeout,
+                    task_id=task_id,
+                )
             )
+        if len(reports) == 1:
+            report = reports[0]
+            if args.json_out is not None:
+                args.json_out.write_text(
+                    json.dumps(report, indent=2),
+                    encoding="utf-8",
+                )
+        else:
+            report = {
+                "tasks": reports,
+                "overall_status": (
+                    "PASS"
+                    if all(
+                        task_report["candidate_reports"][0]["overall_verdict"]
+                        == "PASS"
+                        for task_report in reports
+                    )
+                    else "FAIL"
+                ),
+            }
+            if args.json_out is not None:
+                args.json_out.write_text(
+                    json.dumps(report, indent=2),
+                    encoding="utf-8",
+                )
     except (OSError, TypeError, ValueError, json.JSONDecodeError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
 
-    _print_report(report)
-    return 0 if report["candidate_reports"][0]["failed"] == 0 else 1
+    if len(reports) == 1:
+        _print_report(reports[0])
+        passed = reports[0]["candidate_reports"][0]["failed"] == 0
+    else:
+        _print_multi_report(reports)
+        passed = report["overall_status"] == "PASS"
+    return 0 if passed else 1
 
 
 if __name__ == "__main__":

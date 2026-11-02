@@ -1,7 +1,21 @@
-.venv/
+﻿.venv/
 .pytest_cache/
 __pycache__/
 *.py[cod]
 .env
+.env.*
 results/raw/
 results/graded/
+
+# Archives & build artifacts
+*.zip
+
+# Test & coverage output
+.coverage
+htmlcov/
+
+# System & IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

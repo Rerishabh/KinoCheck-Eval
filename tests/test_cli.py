@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 import kinocheck.cli as cli
 from kinocheck.cli import main
 
@@ -142,3 +144,105 @@ def test_module_candidate_cli_invocation():
     )
     assert completed.returncode == 0
     assert "Verdict: PASS" in completed.stdout
+
+
+@pytest.mark.parametrize(
+    ("task_id", "submission"),
+    [
+        ("KC-03", "tasks.kc03.reference"),
+        ("KC-04", "tasks.kc04.reference"),
+    ],
+)
+def test_reference_module_candidates_run_additional_tasks(
+    task_id, submission, capsys
+):
+    result = main(
+        [
+            "benchmark",
+            "--task",
+            task_id,
+            "--submission",
+            submission,
+            "--timeout",
+            "10",
+        ]
+    )
+
+    assert result == 0
+    output = capsys.readouterr().out
+    assert f"Task: {task_id}" in output
+    assert "Verdict: PASS" in output
+
+
+def _write_unified_reference(tmp_path):
+    submission = tmp_path / "unified_reference.py"
+    submission.write_text(
+        "from tasks.kc02.reference import plan as kc02_plan\n"
+        "from tasks.kc03.reference import plan as kc03_plan\n"
+        "from tasks.kc04.reference import plan as kc04_plan\n"
+        "\n"
+        "def plan(scenario):\n"
+        "    if 'risk_grid' in scenario or 'risk_budget' in scenario:\n"
+        "        return kc03_plan(scenario)\n"
+        "    if scenario.get('task_id') == 'KC-04':\n"
+        "        return kc04_plan(scenario)\n"
+        "    return kc02_plan(scenario)\n",
+        encoding="utf-8",
+    )
+    return submission
+
+
+def test_all_tasks_run_with_unified_candidate(tmp_path, capsys):
+    result = main(
+        [
+            "benchmark",
+            "--task",
+            "all",
+            "--submission",
+            str(_write_unified_reference(tmp_path)),
+            "--timeout",
+            "10",
+        ]
+    )
+
+    assert result == 0
+    output = capsys.readouterr().out
+    assert "=== Task KC-02 ===" in output
+    assert "=== Task KC-03 ===" in output
+    assert "=== Task KC-04 ===" in output
+    assert output.count("Verdict: PASS") == 3
+
+
+def test_comma_separated_tasks_run_with_unified_candidate(tmp_path, capsys):
+    result = main(
+        [
+            "benchmark",
+            "--task",
+            "KC-02,KC-04",
+            "--submission",
+            str(_write_unified_reference(tmp_path)),
+            "--timeout",
+            "10",
+        ]
+    )
+
+    assert result == 0
+    output = capsys.readouterr().out
+    assert "=== Task KC-02 ===" in output
+    assert "=== Task KC-04 ===" in output
+    assert "=== Task KC-03 ===" not in output
+
+
+def test_comma_separated_unknown_task_exits_two(capsys):
+    result = main(
+        [
+            "benchmark",
+            "--task",
+            "KC-02,KC-99",
+            "--submission",
+            "tasks.kc02.reference",
+        ]
+    )
+
+    assert result == 2
+    assert "Unknown task: KC-99" in capsys.readouterr().err
