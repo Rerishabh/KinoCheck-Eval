@@ -11,13 +11,23 @@
 
 KinoCheck-Eval is a deterministic, execution-based benchmark evaluating whether code-generating AI models produce physically safe and kinematically valid wheeled-robot motion planning and speed-profiling code. While existing code benchmarks evaluate static functional correctness or repository-level issue resolution, many general-purpose code benchmarks do not directly measure continuous physical constraints such as swept-volume obstacle clearance, continuous perimeter margins, Pareto-optimal hazard budgets, and coupled forward-backward braking profiles. Evaluated across 20 calibrated scenarios spanning 3 core tasks (KC-02, KC-03, KC-04) using GitHub Copilot (Auto / Standard tier), the model achieved an overall scenario-trial pass rate of 70.6% (24 passed out of 34 evaluated scenario trials across 5 total task attempts). The benchmark exposed acute domain-specific failure modes: a catastrophic runtime name-binding scope error during geometric segment-rectangle distance evaluation, and premature false-infeasibility rejections caused by conflating continuous world coordinates with discrete grid cell indices.
 
+| Metric | Result |
+|---|---|
+| Tasks Evaluated | 3 (KC-02, KC-03, KC-04) |
+| Unique Scenarios | 20 |
+| Scenario Trials Passed | 24 / 34 |
+| Pooled Pass Rate | 70.6% |
+| Automated Test Suite | 221 / 221 passing |
+| Targeted Mutants Detected | 15 / 15 (100% kill rate) |
+| Grader Type | Deterministic code execution (0 LLM judges) |
+
 ## 2. Video Walkthrough
 
 [![KinoCheck-Eval Video Walkthrough](https://img.youtube.com/vi/kX4rVOpBWcE/maxresdefault.jpg)](https://www.youtube.com/watch?v=kX4rVOpBWcE)
 
 **▶ [Watch the KinoCheck-Eval walkthrough on YouTube](https://www.youtube.com/watch?v=kX4rVOpBWcE)**
 
-This walkthrough demonstrates the benchmark tasks, deterministic grading, KC-02 and KC-03 failure analysis, and reproduction of the successful candidate results.
+This walkthrough demonstrates the benchmark tasks, deterministic grading, KC-02 and KC-03 failure analysis, and reproduction of the evaluated candidate results.
 
 ## 3. Domain and Expertise
 
